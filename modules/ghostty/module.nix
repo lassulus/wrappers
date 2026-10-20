@@ -60,6 +60,7 @@ in
     flagSeparator = "=";
     flags = {
       "--config-file" = config.configFile.path;
+      "--config-default-files" = "false";
     };
     package = config.pkgs.ghostty;
     meta = {
