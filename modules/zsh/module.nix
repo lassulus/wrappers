@@ -33,6 +33,44 @@ in
         description = "cd into a directory just by typing it in";
       };
 
+      plugins = {
+        zinit = {
+          enable = lib.mkEnableOption "zinit";
+          package = lib.mkOption {
+            type = lib.types.package;
+            default = config.pkgs.zinit;
+          };
+          light = lib.mkOption {
+            type = with lib.types; listOf str;
+            default = [ ];
+          };
+          load = lib.mkOption {
+            type = with lib.types; listOf str;
+            default = [ ];
+          };
+          oh-my-zsh = {
+            plugins = lib.mkOption {
+              type = with lib.types; listOf str;
+              default = [ ];
+            };
+            themes = lib.mkOption {
+              type = with lib.types; listOf str;
+              default = [ ];
+            };
+            libs = lib.mkOption {
+              type = with lib.types; listOf str;
+              default = [ ];
+            };
+          };
+          prezto = {
+            plugins = lib.mkOption {
+              type = with lib.types; listOf str;
+              default = [ ];
+            };
+          };
+        };
+      };
+
       integrations = {
         fzf = {
           enable = lib.mkEnableOption "fzf";
@@ -257,6 +295,14 @@ in
             ''}
           '')
 
+          "# Plugins"
+          (lib.optionalString cfg.plugins.zinit.enable "source ${config.pkgs.zinit}/share/zinit/zinit.zsh")
+          (lib.concatMapStringsSep "\n" (p: "zinit light ${p}") cfg.plugins.zinit.light)
+          (lib.concatMapStringsSep "\n" (p: "zinit load${p}") cfg.plugins.zinit.load)
+          (lib.concatMapStringsSep "\n" (p: "zinit snippet OMZP::${p}") cfg.plugins.zinit.oh-my-zsh.plugins)
+          (lib.concatMapStringsSep "\n" (p: "zinit snippet OMZT::${p}") cfg.plugins.zinit.oh-my-zsh.themes)
+          (lib.concatMapStringsSep "\n" (p: "zinit snippet OMZL::${p}") cfg.plugins.zinit.oh-my-zsh.libs)
+          (lib.concatMapStringsSep "\n" (p: "zinit snippet PZT::${p}") cfg.plugins.zinit.prezto.plugins)
           "# Integrations"
           (lib.optionalString ing.fzf.enable "source <(fzf --zsh)")
           (lib.optionalString ing.atuin.enable ''eval "$(atuin init zsh)"'')
@@ -317,6 +363,10 @@ in
       "--histfcntllock" = true;
       "--histexpiredupsfirst" = cfg.history.expireDupsFirst;
     };
+
+    postHook = "
+zinit plugins
+";
 
     env.ZDOTDIR = builtins.toString (
       config.pkgs.linkFarm "zsh-merged-config" [
