@@ -181,6 +181,9 @@ Built-in options (always available):
 - `wrapper`: The resulting wrapped package (read-only, auto-generated from other options)
 - `apply`: Function to extend the configuration with additional modules (read-only)
 
+Always available, see [Styling](#styling):
+- `styling`: Shared colour scheme, fonts, opacity and cursor settings
+
 Optional modules (import via `wlib.modules.<name>`):
 - `systemd`: Generates systemd service files (user and/or system), options are passed through from NixOS
 
@@ -367,6 +370,216 @@ in {
     "${myHello.outputs.systemd-user}/systemd/user/hello.service";
 }
 ```
+
+## Styling
+
+Every wrapper module has a `styling` option group: one colour scheme, font,
+opacity and cursor definition that programs derive their own configuration
+from. It plays the role stylix plays for NixOS and home-manager, but stays
+inside the wrapper module system, so it works the same on nixos, home-manager,
+nix-darwin, devenv, or a bare `nix build`.
+
+Wrapper modules are evaluated independently of each other, so there is no
+shared configuration for a theme to live in. `wlib.applyStyle` maps one
+definition over as many modules as you like:
+
+```nix
+{ pkgs, wrappers, ... }:
+let
+  themed = wrappers.lib.applyStyle {
+    inherit pkgs;
+    styling = {
+      scheme = "gruvbox-dark-hard";
+      fonts.monospace = {
+        package = pkgs.jetbrains-mono;
+        name = "JetBrains Mono";
+      };
+      fonts.sizes.terminal = 12;
+      opacity.terminal = 0.9;
+    };
+  } { inherit (wrappers.wrapperModules) alacritty foot rofi waybar; };
+in
+[
+  themed.alacritty.wrapper
+  themed.foot.wrapper
+  themed.rofi.wrapper
+  themed.waybar.wrapper
+]
+```
+
+The results are ordinary configs, so a single program can still be refined
+afterwards without losing the shared theme:
+
+```nix
+themed.alacritty.apply {
+  # keep the scheme, but with a black background
+  styling.palette.base00 = "000000";
+}
+```
+
+Nothing forces you to use the helper. `styling` is a normal option group, so
+passing it to a single `apply` works too:
+
+```nix
+(wrappers.wrapperModules.foot.apply {
+  inherit pkgs;
+  styling.scheme = "gruvbox-dark-hard";
+}).wrapper
+```
+
+### Colour scheme
+
+`styling.scheme` accepts the name of any scheme in `pkgs.base16-schemes`, or a
+path or derivation holding a base16 YAML file:
+
+```nix
+styling.scheme = "gruvbox-dark-hard";
+styling.scheme = ./my-scheme.yaml;
+```
+
+It populates `styling.palette.base00` through `styling.palette.base0F`. Those
+are ordinary options, so any individual colour can be changed without giving up
+the scheme:
+
+```nix
+styling.scheme = "gruvbox-dark-hard";
+styling.palette.base0D = "abcdef";
+```
+
+Colours are stored as lower case 6 digit hex **without** a `#` prefix, because
+that is the one form every config format can be derived from. Add the prefix
+you need with the helpers below.
+
+`styling.colors` exposes the same palette under semantic names, which is what
+modules should read — `colors.background` says what a value means where
+`palette.base00` does not:
+
+| | | | |
+|---|---|---|---|
+| `background` base00 | `backgroundAlt` base01 | `selection` base02 | `comment` base03 |
+| `foregroundAlt` base04 | `foreground` base05 | `foregroundBright` base06 | `backgroundBright` base07 |
+| `red` base08 | `orange` base09 | `yellow` base0A | `green` base0B |
+| `cyan` base0C | `blue` base0D | `magenta` base0E | `brown` base0F |
+| `accent` base0D | `error` base08 | `warning` base0A | `success` base0B |
+| `info` base0C | | | |
+
+`styling.colors.ansi` additionally provides the standard base16 mapping onto
+the 16 ANSI terminal colours (`black`, `red`, … `white`, `brightBlack`, …
+`brightWhite`), so terminals do not each have to invent their own.
+
+### Options
+
+| Option | Default | Description |
+|---|---|---|
+| `styling.enable` | `styling.scheme != null` | Whether this wrapper styles itself |
+| `styling.scheme` | `null` | Scheme name, path, or derivation |
+| `styling.palette.base00`–`base0F` | from the scheme | Individual colours |
+| `styling.colors` | derived, read only | Semantic aliases and `colors.ansi` |
+| `styling.polarity` | from the scheme | `"light"` or `"dark"` |
+| `styling.fonts.{monospace,sansSerif,serif,emoji}` | DejaVu, Noto Color Emoji | `{ package; name; }` |
+| `styling.fonts.sizes.{applications,terminal,desktop,popups}` | `12`, `12`, `10`, `10` | Font sizes |
+| `styling.fonts.packages` | derived, read only | The configured font packages, deduplicated |
+| `styling.fonts.provideFontconfig` | `false` | Set `FONTCONFIG_FILE` so the wrapper carries its own fonts |
+| `styling.opacity.{applications,terminal,desktop,popups}` | `1.0` | Opacity, from `0.0` to `1.0` |
+| `styling.cursor` | Adwaita, size 24 | `{ package; name; size; }` |
+
+`styling.enable` turns itself on as soon as a scheme is set, so one definition
+themes everything. Wrappers that should keep their own look opt out
+individually:
+
+```nix
+(wrappers.wrapperModules.foot.apply {
+  inherit pkgs;
+  styling.scheme = "gruvbox-dark-hard";
+  styling.enable = false;
+}).wrapper
+```
+
+With no scheme set anywhere, `styling.enable` is false and no wrapper changes
+behaviour. Enabling it without a scheme is fine too — the palette falls back to
+`default-dark`, which is useful when you only care about fonts.
+
+### Helpers
+
+`wlib.style` converts a stored colour into whatever shape a program wants:
+
+| Function | Result |
+|---|---|
+| `withHash "1d2021"` | `"#1d2021"` |
+| `toRGB "1d2021"` | `{ r = 29; g = 32; b = 33; }` |
+| `rgbCss "1d2021"` | `"rgb(29, 32, 33)"` |
+| `rgbaCss "1d2021" 0.9` | `"rgba(29, 32, 33, 0.9)"` |
+| `withAlpha "1d2021" 0.9` | `"1d2021e6"` |
+| `formatNumber 0.9` | `"0.9"` (`toString` would give `"0.900000"`) |
+| `luminance "1d2021"` | approximate brightness, `0.0` to `1.0` |
+| `isDark "1d2021"` | `true` |
+| `mkDefaults` | lowers every leaf of an attrset to `lib.mkDefault` |
+
+It also exposes `parseScheme`, `resolveScheme` and `slots` for working with
+base16 schemes directly. Scheme loading is pure — a small line based parser
+rather than a YAML tool — so `nix flake check` never needs import from
+derivation. The parser reads the canonical base16 layout, which is what all
+303 schemes in `pkgs.base16-schemes` use; a file spelling a slot as `base0a`
+is reported as missing `base0A`.
+
+### Adding styling support to a module
+
+A module opts in by deriving settings from `styling`, gated on
+`styling.enable`:
+
+```nix
+{ config, lib, wlib, ... }:
+{
+  config.settings = lib.mkIf config.styling.enable (
+    let
+      inherit (config) styling;
+      inherit (wlib.style) withHash;
+    in
+    wlib.style.mkDefaults {
+      font.normal.family = styling.fonts.monospace.name;
+      font.size = styling.fonts.sizes.terminal;
+
+      colors.primary.background = withHash styling.colors.background;
+      colors.primary.foreground = withHash styling.colors.foreground;
+      colors.normal.red = withHash styling.colors.ansi.red;
+
+      window.opacity = styling.opacity.terminal;
+    }
+  );
+}
+```
+
+Two rules:
+
+- **Gate on `config.styling.enable`.** It is false until a scheme is set, which
+  is what keeps styling from changing the behaviour of wrappers that do not
+  want it.
+- **Every derived value must be a default**, via `wlib.style.mkDefaults` or an
+  explicit `lib.mkDefault`. A `settings` option is declared with `default = { }`,
+  which is priority 1500, so a plain `config.settings.x = …` from styling lands
+  at priority 100 and would silently outrank the user's own value. Defining it
+  as a default puts the user back on top.
+
+Fonts are found through fontconfig, not `PATH`, so there is no point adding
+`styling.fonts.*.package` to `extraPackages`. A module only needs the font's
+`name`; users who want a self-contained wrapper turn on
+`styling.fonts.provideFontconfig`.
+
+Styling is usually worth keeping in its own file, pulled in with a plain
+`imports`, so that a module's own configuration stays readable:
+
+```nix
+# modules/<name>/module.nix
+{
+  imports = [ ./styling.nix ];
+  # ...
+}
+```
+
+`modules/alacritty` is the worked example: `styling.nix` derives colours,
+fonts and opacity, and `check.nix` shows how to test a styled module by
+asserting on the generated config rather than on the built wrapper, which
+keeps the check from having to build the program.
 
 ## alternatives
 

@@ -245,9 +245,52 @@ let
     }:
     lib.evalModules { inherit modules class specialArgs; };
 
-  modules = lib.genAttrs [ "package" "flags" "command" "wrapper" "meta" "systemd" ] (
-    name: import ./modules/${name}.nix
-  );
+  modules = lib.genAttrs [
+    "package"
+    "flags"
+    "command"
+    "wrapper"
+    "meta"
+    "styling"
+    "systemd"
+  ] (name: import ./modules/${name}.nix);
+
+  /**
+    Colour scheme loading and colour formatting helpers, used by the styling
+    module and by any wrapper module that derives configuration from it.
+  */
+  style =
+    (import ./style/base16.nix { inherit lib; }) // (import ./style/colors.nix { inherit lib; });
+
+  /**
+    Apply the same settings to a set of wrapper modules at once.
+
+    Wrapper modules are evaluated independently, so there is no shared
+    configuration for a theme to live in. This maps one settings module over a
+    whole set of them, which is how a single `styling` definition reaches
+    every program.
+
+    # Type
+    ```
+    applyStyle :: Module -> AttrsOf WrapperModule -> AttrsOf Config
+    ```
+
+    # Example
+
+    ```nix
+    themed = wlib.applyStyle {
+      inherit pkgs;
+      styling.scheme = "gruvbox-dark-hard";
+    } { inherit (wrappers.wrapperModules) alacritty foot rofi; };
+
+    # themed.alacritty.wrapper, themed.foot.wrapper, ...
+    ```
+
+    The results are ordinary configs, so they can be refined further per
+    program with their own `apply`.
+  */
+  applyStyle =
+    settings: wrapperModules: lib.mapAttrs (_: module: module.apply settings) wrapperModules;
 
   /**
     Create a wrapper configuration using the NixOS module system.
@@ -350,6 +393,7 @@ let
           })
           modules.wrapper
           modules.meta
+          modules.styling
           wrapperModule
         ];
       };
@@ -676,8 +720,10 @@ let
     inherit
       types
       modules
+      style
       wrapModule
       wrapPackage
+      applyStyle
       escapeShellArgWithEnv
       generateArgsFromFlags
       flagToArgs

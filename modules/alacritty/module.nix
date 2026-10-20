@@ -9,6 +9,7 @@ let
 in
 {
   _class = "wrapper";
+  imports = [ ./styling.nix ];
   options = {
     settings = lib.mkOption {
       type = tomlFmt.type;
