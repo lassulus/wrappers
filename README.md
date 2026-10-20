@@ -91,6 +91,53 @@ wrappers.lib.wrapPackage {
 }
 ```
 
+### Environment Variables
+
+Each `env.<NAME>` entry is either a plain string or a small
+submodule:
+
+```nix
+{
+  env = {
+    # Literal:
+    FOO = "bar";
+
+    # Prepend to PATH using a list and `wlib.env.ref`. The ref
+    # expands to the caller's existing PATH at runtime; if it's
+    # unset or empty, the ref drops out and no stray separators
+    # are left behind.
+    PATH.value = [ "/opt/bin" (wrappers.lib.env.ref "PATH") ];
+
+    # Only set EDITOR if the caller hasn't already picked one.
+    EDITOR = { value = "vim"; ifUnset = true; };
+  };
+
+  # To unset a variable inherited from the caller, drop a line in
+  # preHook — the env option is for declarative assignments only:
+  preHook = ''
+    unset LD_PRELOAD
+  '';
+}
+```
+
+Submodule options:
+- `value`: a list of parts joined with `separator`. Plain strings
+  coerce to singleton lists, so `env.FOO = "bar"` works, but
+  reading back always gives a list. Parts can be plain strings or
+  `wlib.env.ref "NAME"` runtime references.
+- `separator`: join separator (default `:`).
+- `ifUnset`: only apply when the caller's environment doesn't
+  already have the variable set (empty counts as unset).
+
+`value` is always a list when read back, so consumers inspecting
+another wrapper's config don't need to safeguard against two
+types. To read a literal entry as a joined string, use
+`lib.concatStringsSep entry.separator entry.value`.
+
+List `value`s merge by concatenation when composed via `apply`, so
+multiple modules stack contributions onto the same variable without
+fighting over a single string.
+
 ### Creating Custom Wrapper Modules
 
 ```nix

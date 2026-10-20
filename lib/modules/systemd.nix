@@ -111,7 +111,7 @@ in
       in
       lib.concatStringsSep " " ([ config.exePath ] ++ map escapeForSystemd config.args)
     );
-    environment = lib.mkDefault config.env;
+    environment = lib.mkDefault config.outputs.staticEnv;
     path = lib.mkDefault config.extraPackages;
     preStart = lib.mkIf (config.preHook != "") (lib.mkDefault config.preHook);
     postStop = lib.mkIf (config.postHook != "") (lib.mkDefault config.postHook);

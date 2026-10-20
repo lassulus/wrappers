@@ -119,6 +119,116 @@ let
     ''"${escaped}"'';
 
   /**
+    Environment variable helpers.
+
+    - `env.ref NAME`: marker placed inside an `env.<VAR>.value` list
+      to reference another variable at runtime. Empty/unset refs
+      drop out cleanly via a runtime join helper, so there are no
+      dangling separators.
+
+    - `env.render`: render an `env` attrset into a shell snippet.
+      Used by `wrapPackage` and exposed for tests.
+
+    `env.render` accepts the same shapes as the `env` module option:
+
+      - `env.FOO = "bar"`               literal
+      - `env.FOO.value = "bar"`         literal (explicit)
+      - `env.FOO.value = [ "a" "b" ]`   list, joined with `separator`
+      - `env.FOO.value = [ "/opt/bin" (env.ref "PATH") ]`  prepend
+      - `env.FOO.ifUnset = true`        only set when caller hasn't
+
+    To unset a variable, put `unset VAR` in `preHook` instead.
+  */
+  env =
+    let
+      esc =
+        s: ''"${lib.replaceStrings [ ''\'' ''"'' ] [ ''\\'' ''\"'' ] (toString s)}"'';
+
+      norm =
+        e:
+        if builtins.isString e || builtins.isList e then { value = e; } else e;
+
+      renderPart =
+        p:
+        if builtins.isString p then
+          esc p
+        else if (p._type or null) == "envRef" then
+          ''"''${${p.name}-}"''
+        else
+          throw "wlib.env.render: invalid part ${lib.generators.toPretty { } p}";
+
+      line =
+        name: raw:
+        let
+          e = norm raw;
+          val = e.value or null;
+          parts =
+            if val == null then
+              [ ]
+            else if builtins.isList val then
+              val
+            else
+              [ val ];
+          simple = lib.length parts == 1 && builtins.isString (lib.head parts);
+          sep = e.separator or ":";
+          body =
+            if parts == [ ] then
+              null
+            else if simple then
+              "export ${name}=${esc (lib.head parts)}"
+            else
+              "export ${name}=\"$(_wrapper_env_join ${esc sep} ${
+                lib.concatStringsSep " " (map renderPart parts)
+              })\"";
+          wrapped =
+            if body == null then
+              null
+            else if e.ifUnset or false then
+              ''
+                if [ -z "''${${name}:-}" ]; then
+                  ${body}
+                fi''
+            else
+              body;
+        in
+        {
+          join = !simple && wrapped != null;
+          text = wrapped;
+        };
+
+      helper = ''
+        _wrapper_env_join() {
+          local sep="$1" out="" p
+          shift
+          for p in "$@"; do
+            [ -n "$p" ] || continue
+            out="''${out:+$out$sep}$p"
+          done
+          printf '%s' "$out"
+        }'';
+    in
+    {
+      ref = name: {
+        _type = "envRef";
+        inherit name;
+      };
+
+      render =
+        raw:
+        let
+          lines = lib.filter (l: l.text != null) (lib.mapAttrsToList line raw);
+          needsJoin = lib.any (l: l.join) lines;
+        in
+        if lines == [ ] then
+          ""
+        else
+          lib.concatStringsSep "\n" (
+            lib.optional needsJoin helper ++ map (l: l.text) lines
+          )
+          + "\n";
+    };
+
+  /**
     A collection of types for wrapper modules.
     For now this only contains a file type.
   */
@@ -245,7 +355,7 @@ let
     }:
     lib.evalModules { inherit modules class specialArgs; };
 
-  modules = lib.genAttrs [ "package" "flags" "command" "wrapper" "meta" "systemd" ] (
+  modules = lib.genAttrs [ "package" "flags" "env" "command" "wrapper" "meta" "systemd" ] (
     name: import ./modules/${name}.nix
   );
 
@@ -470,14 +580,7 @@ let
       inherit (pkgs) lndir;
 
       # Generate environment variable exports
-      envString =
-        if env == { } then
-          ""
-        else
-          lib.concatStringsSep "\n" (
-            lib.mapAttrsToList (name: value: ''export ${name}="${toString value}"'') env
-          )
-          + "\n";
+      envString = wrapperLib.env.render env;
 
       # Generate flag arguments with proper line breaks and indentation
       flagsString =
@@ -681,6 +784,7 @@ let
       escapeShellArgWithEnv
       generateArgsFromFlags
       flagToArgs
+      env
       ;
   };
 in

@@ -9,6 +9,7 @@
   imports = [
     wlib.modules.package
     wlib.modules.flags
+    wlib.modules.env
   ];
   options.args = lib.mkOption {
     type = lib.types.listOf lib.types.str;
@@ -26,13 +27,6 @@
       Additional packages to add to the wrapper's runtime dependencies.
       This is useful if the wrapped program needs additional libraries or tools to function correctly.
       These packages will be added to the wrapper's runtime dependencies, ensuring they are available when the wrapped program is executed.
-    '';
-  };
-  options.env = lib.mkOption {
-    type = lib.types.attrsOf lib.types.str;
-    default = { };
-    description = ''
-      Environment variables to set in the wrapper.
     '';
   };
   options.preHook = lib.mkOption {
