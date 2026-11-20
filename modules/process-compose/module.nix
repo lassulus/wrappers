@@ -14,6 +14,11 @@ in
       inherit (yamlFmt) type;
       default = {
         version = "0.5";
+        is_strict = true;
+        shell = {
+          shell_command = lib.getExe config.pkgs.bash;
+          shell_argument = "-c";
+        };
       };
       description = "See <https://f1bonacc1.github.io/process-compose/configuration/>";
       example = {

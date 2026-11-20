@@ -13,6 +13,12 @@
         wlib = self.lib;
       };
       formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
+      templates = {
+        devenv-postgresql = {
+          path = ./templates/devenv-postgresql;
+          description = "A template making use of process-compose to create a postgresql dev environment, adding treefmt and flake-parts";
+        };
+      };
       checks = forAllSystems (
         system:
         let
